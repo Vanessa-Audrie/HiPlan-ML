@@ -58,7 +58,7 @@ Informasi Dataset Weather
 | `stations`       | `object`         | Stasiun pengamatan cuaca                                             |
 | `source`         | `object`         | Sumber data (contoh: `obs` untuk observasi langsung)                 |
 | `kecamatan`      | `object`         | Nama kecamatan tempat data diambil                                   |
-| `severerisk`     | `float64`        | Risiko cuaca ekstrem (semakin tinggi, semakin berisiko)              |
+| `severerisk`     | `float64`        | Risiko cuaca ekstrem                                                 |
 | `day`            | `int32`          | Tanggal dalam bulan (`1–31`)                                         |
 | `month`          | `int32`          | Bulan (`1–12`)                                                       |
 | `weekday`        | `int32`          | Hari dalam minggu (`0=Senin`, `6=Minggu`)                            |
