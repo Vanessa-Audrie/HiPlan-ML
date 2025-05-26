@@ -25,33 +25,33 @@ Informasi Dataset Weather
 | ---------------- | ---------------- | ---------------------------------------------------------------------|
 | `datetime`       | `datetime64[ns]` | Tanggal pengamatan cuaca dalam format `YYYY-MM-DD`                   |
 | `datetimeEpoch`  | `int64`          | Tanggal dalam format epoch timestamp (detik sejak 1970-01-01)        |
-| `tempmax`        | `float64`        | Suhu maksimum harian (°C)                                            |
-| `tempmin`        | `float64`        | Suhu minimum harian (°C)                                             |
-| `temp`           | `float64`        | Suhu rata-rata harian (°C)                                           |
-| `feelslikemax`   | `float64`        | Suhu maksimum yang dirasakan (°C)                                    |
-| `feelslikemin`   | `float64`        | Suhu minimum yang dirasakan (°C)                                     |
-| `feelslike`      | `float64`        | Suhu rata-rata yang dirasakan (°C)                                   |
-| `dew`            | `float64`        | Titik embun (°C), suhu di mana kelembapan mulai terkondensasi        |
-| `humidity`       | `float64`        | Kelembapan rata-rata (%)                                             |
-| `precip`         | `float64`        | Curah hujan (mm)                                                     |
-| `precipprob`     | `float64`        | Probabilitas terjadinya hujan (%)                                    |
-| `precipcover`    | `float64`        | Persentase wilayah yang mengalami hujan (%)                          |
-| `snow`           | `float64`        | Curah salju (mm)                                                     |
-| `snowdepth`      | `float64`        | Kedalaman salju (biasanya 0) (mm)                                    |
-| `windgust`       | `float64`        | Kecepatan angin kencang maksimum (km/jam)                            |
-| `windspeed`      | `float64`        | Kecepatan angin rata-rata (km/jam)                                   |
-| `winddir`        | `float64`        | Arah angin (0–360°)                                                  |
-| `pressure`       | `float64`        | Tekanan udara (hPa)                                                  |
-| `cloudcover`     | `float64`        | Persentase tutupan awan (%)                                          |
-| `visibility`     | `float64`        | Jarak pandang (km)                                                   |
-| `solarradiation` | `float64`        | Intensitas radiasi matahari (W/m²)                                   |
-| `solarenergy`    | `float64`        | Energi matahari per hari (MJ/m²)                                     |
-| `uvindex`        | `float64`        | Indeks sinar ultraviolet (UV)                                        |
-| `sunrise`        | `object`         | Waktu matahari terbit (`HH:MM:SS`)                                   |
+| `tempmax`        | `float64`        | Suhu maksimum harian                                                 |
+| `tempmin`        | `float64`        | Suhu minimum harian                                                  |
+| `temp`           | `float64`        | Suhu rata-rata harian                                                |
+| `feelslikemax`   | `float64`        | Suhu maksimum yang dirasakan                                         |
+| `feelslikemin`   | `float64`        | Suhu minimum yang dirasakan                                          |
+| `feelslike`      | `float64`        | Suhu rata-rata yang dirasakan                                        |
+| `dew`            | `float64`        | Titik embun, suhu di mana kelembapan mulai terkondensasi             |
+| `humidity`       | `float64`        | Kelembapan rata-rata                                                 |
+| `precip`         | `float64`        | Curah hujan                                                          |
+| `precipprob`     | `float64`        | Probabilitas terjadinya hujan                                        |
+| `precipcover`    | `float64`        | Persentase wilayah yang mengalami hujan                              |
+| `snow`           | `float64`        | Curah salju                                                          |
+| `snowdepth`      | `float64`        | Kedalaman salju                                                      |
+| `windgust`       | `float64`        | Kecepatan angin kencang maksimum                                     |
+| `windspeed`      | `float64`        | Kecepatan angin rata-rata                                            |
+| `winddir`        | `float64`        | Arah angin                                                           |
+| `pressure`       | `float64`        | Tekanan udara                                                        |
+| `cloudcover`     | `float64`        | Persentase tutupan awan                                              |
+| `visibility`     | `float64`        | Jarak pandang                                                        |
+| `solarradiation` | `float64`        | Intensitas radiasi matahari                                          |
+| `solarenergy`    | `float64`        | Energi matahari per hari                                             |
+| `uvindex`        | `float64`        | Indeks sinar ultraviolet                                             |
+| `sunrise`        | `object`         | Waktu matahari terbit                                                |
 | `sunriseEpoch`   | `int64`          | Waktu matahari terbit dalam epoch                                    |
-| `sunset`         | `object`         | Waktu matahari terbenam (`HH:MM:SS`)                                 |
+| `sunset`         | `object`         | Waktu matahari terbenam                                              |
 | `sunsetEpoch`    | `int64`          | Waktu matahari terbenam dalam epoch                                  |
-| `moonphase`      | `float64`        | Fase bulan (0 = bulan baru, 1 = bulan penuh)                         |
+| `moonphase`      | `float64`        | Fase bulan                                                           |
 | `conditions`     | `object`         | Kondisi cuaca umum (contoh: `rain, partially cloudy`)                |
 | `description`    | `object`         | Deskripsi rinci cuaca (misal: "partly cloudy throughout the day...") |
 | `icon`           | `object`         | Gambar ikon representasi cuaca                                       |
@@ -59,7 +59,7 @@ Informasi Dataset Weather
 | `source`         | `object`         | Sumber data (contoh: `obs` untuk observasi langsung)                 |
 | `kecamatan`      | `object`         | Nama kecamatan tempat data diambil                                   |
 | `severerisk`     | `float64`        | Risiko cuaca ekstrem (semakin tinggi, semakin berisiko)              |
-| `day`            | `int32`          | Hari dalam bulan (`1–31`)                                            |
+| `day`            | `int32`          | Tanggal dalam bulan (`1–31`)                                         |
 | `month`          | `int32`          | Bulan (`1–12`)                                                       |
 | `weekday`        | `int32`          | Hari dalam minggu (`0=Senin`, `6=Minggu`)                            |
 | `year`           | `int32`          | Tahun (`YYYY`)                                                       |
