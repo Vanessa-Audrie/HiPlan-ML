@@ -19,6 +19,13 @@ gunung = joblib.load(os.path.join(MODEL_DIR, 'gunung_data.pkl'))
 
 app = FastAPI(title="API Rekomendasi Gunung")
 
+@app.get("/")
+def read_root():
+    return {
+        "message": "✅ API Rekomendasi Gunung aktif"
+    }
+
+
 # Fungsi rekomendasi
 def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_threshold=0.3):
     # Validasi input kosong
