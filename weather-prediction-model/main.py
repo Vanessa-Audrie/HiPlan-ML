@@ -1,12 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 import pickle
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 MODEL_SAVE_PATH = 'weather_prediction_lstm_model.keras'
 PREPROCESSOR_SAVE_PATH = 'weather_preprocessors.pkl'
@@ -251,6 +251,3 @@ async def predict_weather(data: ForecastInput):
     except Exception as e:
         print(f"Unhandled exception during prediction: {e}") # Log for server
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-# uvicorn main:app --reload
-# http://127.0.0.1:8000/docs
