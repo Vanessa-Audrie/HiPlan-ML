@@ -1,9 +1,6 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI,HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
-from fastapi import HTTPException
 import joblib
-import pandas as pd
 import scipy
 import os
 from sklearn.metrics.pairwise import cosine_similarity
@@ -29,7 +26,6 @@ class InputData(BaseModel):
     lokasi: str
     ketinggian: int
 
-
 # Fungsi rekomendasi
 def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_threshold=0.3):
     # Validasi input kosong
@@ -37,10 +33,8 @@ def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_th
         raise HTTPException(status_code=400, detail="Input lokasi harus berupa teks.")
     if input_lokasi.isnumeric():
         raise HTTPException(status_code=400, detail="Input lokasi tidak boleh hanya berisi angka.")
-
     if not isinstance(input_ketinggian, (int, float)):
         raise HTTPException(status_code=400, detail="Input ketinggian harus berupa angka.")
-
     if not input_lokasi or input_ketinggian is None:
         raise HTTPException(status_code=400, detail="Harus mengisi semua kolom: lokasi dan ketinggian.")
 
@@ -61,8 +55,6 @@ def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_th
     except Exception as e:
             raise HTTPException(status_code=500, detail=f"Terjadi error internal: {str(e)}")
 
-
-
     # Urutkan dan ambil terbaik
     final_indices = sorted(qualified_indices,
                              key=lambda i: similarity_scores[i],
@@ -73,9 +65,6 @@ def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_th
             print(f"ℹ Hanya ditemukan {len(final_indices)} rekomendasi yang memenuhi kriteria (gunung buka).")
 
     return gunung.iloc[final_indices][['Nama', 'Provinsi', 'Ketinggian (dpl)', 'Akses']]
-
-
-
 
 # Endpoint
 @app.post("/rekomendasi")
