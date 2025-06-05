@@ -138,8 +138,8 @@ def home():
 @app.post("/predict", response_model=List[ForecastOutput])
 async def predict_weather(data: ForecastInput):
     try:
-        # if not all([model, feature_scaler, target_scaler, label_encoder, EXPECTED_FEATURES_ORDER, df_global is not None]):
-            # raise HTTPException(status_code=503, detail="Model, preprocessors, or global data not loaded. API is not ready.")
+        if not all([model, feature_scaler, target_scaler, label_encoder, EXPECTED_FEATURES_ORDER, df_global is not None]):
+            raise HTTPException(status_code=503, detail="Model, preprocessors, or global data not loaded. API is not ready.")
 
         try:
             forecast_start_dt = pd.to_datetime(data.start_date)
@@ -249,9 +249,9 @@ async def predict_weather(data: ForecastInput):
         return all_forecast_outputs
 
     except ValueError as ve:
-        print(f"ValueError during prediction: {str(ve)}") # Log for server
+        print(f"ValueError during prediction: {str(ve)}") 
         raise HTTPException(status_code=400, detail=f"Input data processing error: {str(ve)}")
 
     except Exception as e:
-        print(f"Unhandled exception during prediction: {e}") # Log for server
+        print(f"Unhandled exception during prediction: {e}") 
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
