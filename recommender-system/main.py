@@ -25,6 +25,10 @@ def read_root():
         "message": "✅ API Rekomendasi Gunung aktif"
     }
 
+class InputData(BaseModel):
+    lokasi: str
+    ketinggian: int
+
 
 # Fungsi rekomendasi
 def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_threshold=0.3):
@@ -74,12 +78,9 @@ def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_th
 
 
 # Endpoint
-@app.get("/rekomendasi")
-def rekomendasi_gunung(
-    lokasi: str = Query(..., description="Lokasi input, misalnya provinsi atau kabupaten"),
-    ketinggian: int = Query(..., description="Ketinggian ideal dalam satuan mdpl")
-):
-    hasil = rekomendasikan_gunung(lokasi, ketinggian, top_n=5)
+@app.post("/rekomendasi")
+def rekomendasi_post(data: InputData):
+    hasil = rekomendasikan_gunung(data.lokasi, data.ketinggian, top_n=5)
     if hasil is None or hasil.empty:
         return {"message": "⚠ Tidak ada gunung yang cocok ditemukan."}
     
