@@ -66,6 +66,20 @@ Informasi Dataset Weather
 
 <br>
 
+Informasi Dataset Model 2
+| Kolom              | Tipe Data   | Deskripsi                         |
+| ------------------ | ------------| ----------------------------------|
+| `ketinggian`       | `int64`     | Ketinggian jalur (mdpl)           |
+| `jarak`            | `int64`     | Panjang jalur (meter)             |
+| `elevation_gain`   | `int64`     | Kenaikan elevasi (mdpl)           |
+| `temp`             | `float64`   | Suhu rata-rata harian (Celsius)   |
+| `humidity`         | `float64`   | Kelembapan relatif (%)            |
+| `precipprob`       | `float64`   | Probabilitas curah hujan (%)      |
+| `windspeed`        | `float64`   | Kecepatan angin rata-rata (km/jam)|
+| `difficulty_score` | `float64`   | Skor kesulitan jalur              |
+| `estimated_time`   | `float64`   | Estimasi waktu tempuh             |
+
+<br>
 
 # Proses ETL
 ## Weather
@@ -100,12 +114,69 @@ Steps:
 5. Save file ke dalam csv bernama `merged_weather`
 
 ## Mountain
-Steps:
-1. Data diambil secara manual dikarenakan tidak semua website memiliki data yang lengkap
-2. Cleaning:
-    - Menghapus kolom redundan seperti jarak memiliki 2 kolom, dalam km dan m (kolom km dihapus karena data lainnya menggunakan unit metrik m)
-    - Menghapus kata seperti (m), (mdpl) pada nama kolom 
-    - Lowercase seluruh data untuk menjaga konsistensi 
-    - Parse koordinat menjadi 2 kolom berbeda, yaitu `latitude` dan `longitude`
-3. Save file ke dalam csv bernama `gunung_indonesia`
+### 1. Extract 
+Data diambil secara manual dikarenakan tidak semua website memiliki data yang lengkap
 
+### 2. Clean
+Steps:
+1. Menghapus kolom redundan seperti jarak memiliki 2 kolom, dalam km dan m (kolom km dihapus karena data lainnya menggunakan unit metrik m)
+2. Menghapus kata seperti (m), (mdpl) pada nama kolom 
+3. Lowercase seluruh data untuk menjaga konsistensi 
+4. Parse koordinat menjadi 2 kolom berbeda, yaitu `latitude` dan `longitude`
+5. Save file ke dalam csv bernama `gunung_indonesia`
+
+## Model 2 Dataset
+### 1. Extract & Load
+Data diambil secara dari merge dataset weather dan mountain dengan `on='kecamatan', how='inner'` 
+
+### 2. Clean
+Steps:
+1. Memilih features yang akan digunakan untuk membuat dataset baru  (`features = ['ketinggian', 'jarak', 'elevation gain', 'temp', 'humidity', 'precipprob', 'windspeed']`)
+2. Cek data null dan duplikat
+3. Drop data duplikat
+4. Scale kolom yang diperlukan `'temp', 'humidity', 'precipprob', 'windspeed'` dengan `MinMaxScaler`
+
+### 3. Create Dummy Targets
+#### 1. Difficulty Score
+```
+def base_difficulty(row):
+    elevation_gain_ft = row['elevation gain'] * 3.28084  # konversi meter ke feet
+    distance_mi = row['jarak'] / 1609.34  # konversi meter ke mile
+    raw_score = math.sqrt(elevation_gain_ft * 2 * distance_mi) #shenandoah's formula
+    return raw_score ** 0.5
+
+def full_difficulty_score(row):
+    base = base_difficulty(row)
+    weather_penalty = (
+        0.25 * row['precipprob_scaled'] +
+        0.25 * row['windspeed_scaled'] +
+        0.25 * row['temp_scaled'] +
+        0.25 * row['humidity_scaled']
+    )
+    SCALE_FACTOR = 0.25
+    final_score = base * weather_penalty * SCALE_FACTOR
+    return final_score
+
+# Normalize difficulty to 1–10 range
+def normalize_difficulty(scores):
+    min_score = scores.min()
+    max_score = scores.max()
+    return 1 + 9 * ((scores - min_score) / (max_score - min_score))
+```
+Base Difficulty menggunakan rumus [Shenandoah's Hiking Difficulty Formula](https://www.nps.gov/shen/planyourvisit/how-to-determine-hiking-difficulty.htm), kemudian ditambah dengan weather penalty (model tidak hanya memprediksi berdasarkan elevation gain dan jarak, namun memperkirakan juga cuaca pada hari tersebut). Kemudian angka tersebut akan dinormalisasi menjadi 1-10.
+
+#### 2. Estimated Time
+
+```
+def estimate_time(row):
+    base_time = (row['jarak'] / 5000) + (row['elevation gain'] / 600) # naismith rule
+    difficulty_factor = row['difficulty_score'] / 10 # scale 0–1
+    return base_time * (1 + difficulty_factor)
+```
+Base Time menggunakan rumus [Naismith’s Rule](https://www.restless-viking.com/2018/11/29/naismiths-rule/) dimana setiap 5000 meter adalah 1 jam ditambah dengan 1 jam untuk 600 meter kenaikan elevasi, kemudian ditambah dengan hasil dari difficulty score untuk memprediksi estimasi waktu yang lebih dinamis dengan tingkat kesulitannya.
+
+### 4. Save
+Steps:
+1. Drop kolom yang tidak digunakan lagi `'temp_scaled', 'precipprob_scaled', 'windspeed_scaled', 'humidity_scaled', 'base_difficulty_score', 'full_difficulty_score'`
+2. Rename kolom `elevation gain` menjadi `elevation_gain` untuk konsistensi
+3. Save ke file csv bernama `model2_dataset`
