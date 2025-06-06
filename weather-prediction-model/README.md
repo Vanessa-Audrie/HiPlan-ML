@@ -11,9 +11,9 @@ This document provides an overview of the weather forecasting model, the FastAPI
     3.  [Model Architecture](#3-model-architecture)
     4.  [Training](#4-training)
 2.  [API Explanation](#api-explanation)
-    1.  [Startup](#1-startup)
+    1.  [Initialization and Data Loading](#1-initialization-and-data-loading)
     2.  [Core Functionality](#2-core-functionality)
-    3.  [/predict Endpoint Logic](#3-predict-endpoint-logic)
+    3.  [API Endpoints](#3-api-endpoints)
 3.  [How to Use the API](#how-to-use-the-api)
     1.  [Prerequisites](#prerequisites)
     2.  [Home Endpoint](#1-home-endpoint)
@@ -74,76 +74,80 @@ The model is a **Neural Network** built with TensorFlow/Keras, specifically desi
 
 ## API Explanation
 
-The API is built using **FastAPI** to serve the trained weather forecasting model. It's titled "Weather Forecast API" and provides predictions for precipitation probability, wind speed, temperature, and humidity.
+The API is built using FastAPI to serve a trained LSTM weather forecasting model. It's titled "Weather Forecast API" and provides daily predictions for precipitation probability, wind speed, temperature, and humidity for various sub-districts (kecamatan).
 
-### 1. Startup
+### 1. Initialization and Data Loading
 
-Triggered by `@app.on_event("startup")`:
+When the application starts, several key assets are loaded into memory:
 
-* **Model Loading**: The pre-trained Keras model (`weather_prediction_lstm_model.keras`) is loaded.
-* **Preprocessor Loading**: Saved preprocessors (`weather_preprocessors.pkl`), which include the `feature_scaler` (RobustScaler), `target_scaler` (RobustScaler), and `label_encoder` (LabelEncoder for `kecamatan`), are loaded using `pickle`.
-* **Feature List Loading**: The specific list and order of numerical features (`EXPECTED_FEATURES_ORDER`) used during training (`weather_feature_list.pkl`) are loaded.
-* **Global Data Loading & Preprocessing**:
-    * Historical weather data is loaded from a Google Drive URL (`DATA_PATH`) into a global pandas DataFrame (`df_global`).
-    * The `engineer_features` function (described in [Model Explanation](#1-data-and-features)) is applied to this DataFrame.
-    * Rows with NA values in any of the `EXPECTED_FEATURES_ORDER` columns are dropped.
-    * This `df_global` serves as the source of historical data for making new predictions.
-* If any of these steps fail, the API might not function correctly, potentially leading to errors when endpoints are called.
+- Model Loading: A pre-trained Keras LSTM model (`weather_prediction_lstm_model.keras`) is loaded.
+- Preprocessor Loading: A pickle file (weather_preprocessors.pkl) containing saved preprocessors is loaded. This includes:
+  - `feature_scaler`: A scaler for the input features.
+  - `target_scaler`: A scaler for the prediction targets.
+  - `label_encoder`: An encoder for the categorical kecamatan feature.
+- Feature List: The exact list of features (`weather_feature_list.pkl`) the model was trained on is loaded.
+- Global Data Loading & Preparation:
+  - Historical weather data is fetched from a Google Drive URL and loaded into a pandas DataFrame.
+  - The engineer_features function is immediately applied to this DataFrame to create time-based features (`year`, `month`, `day`), interaction terms (`dew_point_spread`), and lagged variables (`humidity_lag1`).
+  - This fully processed DataFrame (`df_featured`) serves as the in-memory database of historical data for all predictions.
+
+If any of these files are not found, the application will raise a `RuntimeError` on startup.
 
 ### 2. Core Functionality
 
-* **Feature Engineering (`engineer_features`)**: A utility function that takes a DataFrame and adds derived features like date components, pressure difference, dew point spread, and humidity lag. This is used at startup for the global dataset and implicitly in how new data rows are constructed during iterative forecasting.
-* **Prediction Endpoint (`/predict`)**: The main endpoint for obtaining weather forecasts.
+`engineer_features(df)`
 
-### 3. /predict Endpoint Logic
+A utility function that processes a raw weather DataFrame. It adds derived features essential for the model's performance, such as date components, pressure differences, dew point spread, and lagged humidity. This ensures that input data for prediction matches the training data format.
 
-This endpoint handles `POST` requests to generate weather forecasts.
+`forecast_from_date(...)`
 
-* **Request (`ForecastInput` Pydantic model)**:
-    * `kecamatan_name` (string): The name of the sub-district.
-    * `start_date` (string, format "YYYY-MM-DD"): The first day for the forecast.
-    * `forecast_days` (integer, optional, default: 7): The number of days to forecast.
-* **Processing Steps**:
-    1.  **Validation**:
-        * Checks if the `start_date` string is in the correct "YYYY-MM-DD" format.
-        * Verifies that the `kecamatan_name` exists in the `df_global` and can be transformed by the loaded `label_encoder`.
-    2.  **Historical Data Retrieval**:
-        * Filters `df_global` for the specified `kecamatan_name` and sorts it by `datetime`.
-        * Selects the last `TIME_STEPS` (7 days) of data ending on the day *before* the `start_date`. This forms the initial input sequence.
-        * If fewer than `TIME_STEPS` days of historical data are found for the given `kecamatan` before the `start_date`, an error is raised.
-    3.  **Kecamatan Encoding**: The input `kecamatan_name` is transformed into its numerical representation using the loaded `label_encoder`.
-    4.  **Iterative Forecasting Loop (for `forecast_days`)**:
-        
-        a.  **Prepare Numerical Input**: The numerical features (from `EXPECTED_FEATURES_ORDER`) of the current `TIME_STEPS`-day sequence are extracted.
-        
-        b.  **Scale Features**: These numerical features are scaled using the `feature_scaler`. The sequence is reshaped to `(1, TIME_STEPS, n_features)`.
-        
-        c.  **Predict**: The scaled numerical sequence and the encoded `kecamatan` are passed to the `model.predict()` method.
-        
-        d.  **Inverse Transform Targets**: The model's scaled output predictions are inverse-transformed using the `target_scaler` to get the actual weather values (`precipprob`, `windspeed`, `temp`, `humidity`).
-        
-        e.  **Store Output**: The prediction for the current day (datetime, kecamatan, and the four target variables) is stored. Values are rounded: `precipprob` to 4 decimal places, others to 2.
-        
-        f.  **Prepare Next Input Sequence (if not the last forecast day)**:
-            i.  The date for the next prediction step is determined (current forecast date).
-            ii. A new row of features is constructed for this next day:
-                * Datetime features (`year`, `month`, `day`, `weekday`) are updated based on the new date.
-                * `humidity_lag1`: Set to the `humidity` predicted in the current step (d).
-                * `dew`: Carried forward from the last known actual or estimated value in the sequence.
-                * `dew_point_spread`: Calculated using the predicted `temp` (d) and the carried-forward `dew`.
-                * `pressure`: Carried forward from the last known actual or estimated value.
-                * `pressure_diff`: Calculated using the carried-forward `pressure` and the `pressure` from the row before it in the sequence.
-                * Other features in `EXPECTED_FEATURES_ORDER` are carried over from the last row of the current sequence.
-            iii. This newly constructed row is appended to the current sequence, and the oldest row in the sequence is dropped to maintain the `TIME_STEPS` window. The DataFrame columns are realigned if necessary.
-    5.  **Response (`List[ForecastOutput]`)**: Returns a list of JSON objects, each representing the forecast for a day, structured according to the `ForecastOutput` Pydantic model.
+This is the core prediction engine. It performs an iterative (auto-regressive) forecast:
 
-* **Error Handling**: The endpoint uses `try-except` blocks and FastAPI's `HTTPException` to return appropriate HTTP status codes and error messages for issues like:
-    * Invalid `start_date` format.
-    * `kecamatan_name` not found in the historical data or label encoder.
-    * Insufficient historical data to form the initial sequence.
-    * Data shape mismatches or other processing errors during feature preparation.
-    * Failures during model prediction or data transformation.
-    * Other unexpected server-side errors.
+1. It retrieves the last `MODEL_TIME_STEPS` (7) days of historical data for a given `kecamatan` before the specified `start_date`.
+1. It then enters a loop for the number of `forecast_days`.
+1. In each iteration, it uses the current 7-day sequence to predict the next day's weather.
+1. Crucially, it then creates a new, synthetic data row for the day it just predicted. This new row includes the predicted values (`temp`, `humidity`, etc.) and uses them to calculate the necessary engineered features (like `dew_point_spread` and `humidity_lag1`) for the next prediction step.
+1. This new synthetic row is added to the end of the sequence, and the oldest day is removed. The updated 7-day sequence is then used to predict the subsequent day.
+1. This process repeats until the entire forecast period is covered.
+
+### 3. API Endpoints
+
+The API exposes two endpoints.
+
+- `GET /`
+
+  A simple root endpoint to confirm that the API is running.
+
+  ```JSON
+  {
+    "message": "Weather Forecast API. Use the /forecast endpoint."
+  }
+  ```
+
+- `POST /forecast`
+
+  This is the main endpoint for generating weather forecasts.
+
+  1. Request Body (`ForecastRequest`):
+        
+      - `kecamatan_name` (string, required): The name of the sub-district (e.g., "berastagi").
+      - `start_date` (string, required, format "YYYY-MM-DD"): The first day for the forecast.
+        
+      - `forecast_days` (integer, required): The number of days to forecast (must be between 1 and 30).
+
+  1. Processing Logic:
+        
+      - Validation: The endpoint first validates the request data.
+      - Gap Handling: It intelligently handles requests for future dates. If a user requests a forecast starting on a date after the latest historical data available, the API will:
+        - Start predicting from the day immediately following its last known data point.
+        - Continue predicting day-by-day until it reaches the end of the user's requested forecast period.
+        - Filter the results to only return the specific days the user originally requested.
+      - Forecasting: It calls the `forecast_from_date` function with the appropriate parameters to generate the prediction sequence.
+      - Response: The final forecast is returned as a list of JSON objects.
+  1. Error Handling: The endpoint will return specific HTTP errors for common issues:
+        - `400 Bad Request`: If the kecamatan name is not found, or if there is insufficient historical data to begin a forecast (i.e., less than 7 days of data before the start date).
+        - `500 Internal Server Error`: For any other unexpected errors during the prediction process.
+
 
 ---
 
@@ -151,126 +155,123 @@ This endpoint handles `POST` requests to generate weather forecasts.
 
 ### Prerequisites
 
-1.  Ensure the FastAPI server is running. You can typically start it with a command like:
-    ```bash
+  Ensure the FastAPI server is running. You can start it with a command like:
+
+  ```bash
     uvicorn main:app --reload
-    ```
-    (Assuming your FastAPI application instance is named `app` in a file named `main.py`).
-2.  The API will be available at a local address, usually `http://127.0.0.1:8000`.
+  ```
 
-### 1. Home Endpoint (`/`)
+  The API will be available at http://127.0.0.1:8000.
 
-* **URL**: `/`
-* **Method**: `GET`
-* **Description**: A simple endpoint to check if the API is running.
-* **Response**:
-    ```json
-    {
-      "message": "Weather Forecast API. Use the /predict endpoint to get forecasts."
-    }
-    ```
+#### 1. Check API Status (/)
 
-### 2. Predict Endpoint
+  URL: /
 
-* **URL**: `/predict`
-* **Method**: `POST`
-* **Description**: Submits data to get a weather forecast for a specified `kecamatan` and date range.
-* **Request Body (JSON - `ForecastInput`)**:
-    ```json
-    {
-      "kecamatan_name": "string",
-      "start_date": "YYYY-MM-DD",
-      "forecast_days": integer
-    }
-    ```
-    * `kecamatan_name`: The name of the sub-district (e.g., `"trikora"`). This must be a name present in the historical data and known to the model's label encoder.
-    * `start_date`: The first date for which you want a forecast (e.g., `"2025-01-29"`).
-    * `forecast_days` (optional): The number of days to forecast from the `start_date`. Defaults to 7 if not provided.
+  Method: GET
 
-* **Example Request (using cURL)**:
-    ```bash
-    curl -X 'POST' \
-      '[http://127.0.0.1:8000/predict](http://127.0.0.1:8000/predict)' \
-      -H 'accept: application/json' \
-      -H 'Content-Type: application/json' \
-      -d '{
-        "kecamatan_name": "trikora",
-        "start_date": "2025-01-29",
-        "forecast_days": 3
-      }'
-    ```
+  Description: Checks if the API is operational.
 
-* **Successful Response (JSON - `List[ForecastOutput]`)**:
-    A list of forecast objects, one for each day.
-    ```json
-    [
-      {
-        "datetime": "2025-01-29",
-        "kecamatan": "trikora",
-        "precipprob": 0.6550,    // Example value (rounded to 4 decimal places)
-        "windspeed": 15.25,      // Example value (rounded to 2 decimal places)
-        "temp": 28.50,           // Example value (rounded to 2 decimal places)
-        "humidity": 75.12        // Example value (rounded to 2 decimal places)
-      },
-      {
-        "datetime": "2025-01-30",
-        "kecamatan": "trikora",
-        "precipprob": 0.6010,
-        "windspeed": 14.80,
-        "temp": 28.20,
-        "humidity": 74.50
-      },
-      {
-        "datetime": "2025-01-31",
-        "kecamatan": "trikora",
-        "precipprob": 0.5500,
-        "windspeed": 14.00,
-        "temp": 27.90,
-        "humidity": 73.00
-      }
-    ]
-    ```
-    *(Actual values will vary based on the model's prediction and input data.)*
+  Example cURL:
 
-* **Error Responses**:
-    * **400 Bad Request**: If input data is invalid.
-        ```json
-        {
-          "detail": "Invalid start_date format. Please use YYYY-MM-DD."
-        }
-        ```
-        ```json
-        {
-          "detail": "Kecamatan 'some_unknown_place' not seen during training. Cannot encode."
-        }
-        ```
-        ```json
-        {
-          "detail": "Not enough historical data for kecamatan 'kecamatan_name' before YYYY-MM-DD. Need 7 days, found X."
-        }
-        ```
-         ```json
-        {
-          "detail": "Input data processing error: [specific error message from ValueError]"
-        }
-        ```
-    * **404 Not Found**: If historical data for the specified `kecamatan_name` doesn't exist.
-        ```json
-        {
-          "detail": "No historical data found for kecamatan 'some_kecamatan'."
-        }
-        ```
-    * **503 Service Unavailable**: If the model, preprocessors, or global data failed to load at startup, preventing the API from being ready. (This is a general indication; specific startup errors are logged to the console).
-        ```json
-        {
-          "detail": "Model, preprocessors, or global data not loaded. API is not ready."
-        }
-        ```
-    * **500 Internal Server Error**: For other unexpected errors during processing.
-        ```json
-        {
-          "detail": "An unexpected error occurred: [specific error message]"
-        }
-        ```
+  ```bash
+    curl -X 'GET' 'http://127.0.0.1:8000/'
+  ```
 
-You can also interact with the API through its auto-generated interactive documentation (Swagger UI) by navigating to `http://127.0.0.1:8000/docs` in your browser when the FastAPI server is running, or to `http://127.0.0.1:8000/redoc` for ReDoc documentation.
+#### 2. Get Weather Forecast (/forecast)
+
+  URL: /forecast
+
+  Method: POST
+
+  Description: Submits data to get a weather forecast for a specified kecamatan and date range.
+
+  Example Request Body:
+
+
+  ```json
+  {
+    "kecamatan_name": "berastagi",
+    "start_date": "2025-08-08",
+    "forecast_days": 5
+  }
+  ```
+
+Example Request (using cURL):
+
+```json
+curl -X 'POST' \
+  'http://127.0.0.1:8000/forecast' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kecamatan_name": "berastagi",
+    "start_date": "2025-08-08",
+    "forecast_days": 5
+  }'
+```
+
+Successful Response (`200 OK`):
+A list of forecast objects, one for each day.
+
+```json
+[
+  {
+    "datetime": "2025-08-08",
+    "kecamatan": "berastagi",
+    "precipprob": 0.531,
+    "windspeed": 9.85,
+    "temp": 24.11,
+    "humidity": 88.45
+  },
+  {
+    "datetime": "2025-08-09",
+    "kecamatan": "berastagi",
+    "precipprob": 0.542,
+    "windspeed": 9.92,
+    "temp": 24.05,
+    "humidity": 88.91
+  },
+  {
+    "datetime": "2025-08-10",
+    "kecamatan": "berastagi",
+    "precipprob": 0.551,
+    "windspeed": 10.01,
+    "temp": 23.98,
+    "humidity": 89.23
+  },
+  {
+    "datetime": "2025-08-11",
+    "kecamatan": "berastagi",
+    "precipprob": 0.559,
+    "windspeed": 10.15,
+    "temp": 23.91,
+    "humidity": 89.67
+  },
+  {
+    "datetime": "2025-08-12",
+    "kecamatan": "berastagi",
+    "precipprob": 0.565,
+    "windspeed": 10.22,
+    "temp": 23.85,
+    "humidity": 90.01
+  }
+]
+```
+
+*(Note: Actual values are examples and will vary based on the model's prediction.)*
+
+Error Response (`400 Bad Request`):
+If you provide a kecamatan that doesn't exist or doesn't have enough data.
+
+
+```json
+{
+  "detail": "Kecamatan 'nonexistent_place' not found in the dataset."
+}
+```
+
+```json
+{
+  "detail": "Not enough historical data for 'berastagi' before 2020-01-01. Need 7 days, but only found 0."
+}
+```
