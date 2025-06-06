@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-import numpy as np
+import pandas as pd
 import tensorflow as tf
 import joblib
 import os
@@ -76,10 +76,10 @@ def predict(data: InputData):
     try:
         # Prepare data in the correct order based on loaded feature list
         input_features = [getattr(data, feature.replace(" ", "_")) for feature in FEATURE_NAMES]
-        input_array = np.array([input_features])
+        input_df = pd.DataFrame([input_features], columns=FEATURE_NAMES)
 
         # Scale input
-        scaled_input = scaler.transform(input_array)
+        scaled_input = scaler.transform(input_df)
 
         # Predict
         prediction = model.predict(scaled_input)
