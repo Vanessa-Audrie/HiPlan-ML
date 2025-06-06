@@ -1,25 +1,28 @@
-from fastapi import FastAPI,HTTPException
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from sklearn.metrics.pairwise import cosine_similarity
 import joblib
 import scipy
 import os
-from sklearn.metrics.pairwise import cosine_similarity
+import logging
 
-BASE_DIR = os.path.dirname(__file__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, 'model')
 
-# Load model & data
-vectorizer = joblib.load(os.path.join(MODEL_DIR, 'vectorizer.pkl'))
-scaler = joblib.load(os.path.join(MODEL_DIR, 'scaler.pkl'))
-combined_recom_features = joblib.load(os.path.join(MODEL_DIR, 'combined_features.pkl'))
-gunung = joblib.load(os.path.join(MODEL_DIR, 'gunung_data.pkl'))
+try:
+    vectorizer = joblib.load(os.path.join(MODEL_DIR, 'vectorizer.pkl'))
+    scaler = joblib.load(os.path.join(MODEL_DIR, 'scaler.pkl'))
+    combined_recom_features = joblib.load(os.path.join(MODEL_DIR, 'combined_features.pkl'))
+    gunung = joblib.load(os.path.join(MODEL_DIR, 'gunung_data.pkl'))
+except Exception as e:
+    raise RuntimeError(f"Gagal load model/data: {e}")
 
 app = FastAPI(title="API Rekomendasi Gunung")
 
 @app.get("/")
 def read_root():
     return {
-        "message": "✅ API Rekomendasi Gunung aktif"
+        "message": "API Rekomendasi Gunung aktif"
     }
 
 class InputData(BaseModel):
