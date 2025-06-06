@@ -1,257 +1,227 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List
-import numpy as np
-import pandas as pd
-import tensorflow as tf
 import pickle
-import os
-from datetime import timedelta
+import uvicorn
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from datetime import date, timedelta
 
-MODEL_SAVE_PATH = 'weather_prediction_lstm_model.keras'
-PREPROCESSOR_SAVE_PATH = 'weather_preprocessors.pkl'
-FEATURES_LIST_SAVE_PATH = 'weather_feature_list.pkl'
-DATA_PATH = 'https://drive.usercontent.google.com/download?id=1kzzLkqeBPVxUr-9Ec0GPsPR7UqtRdeMk&confirm=t'
-TIME_STEPS = 7
-TARGET_VARIABLES = ['precipprob', 'windspeed', 'temp', 'humidity']
+# -------------------------------------------------------------------
+#  1. App & Model Loading
+# -------------------------------------------------------------------
 
-model = None
-feature_scaler = None
-target_scaler = None
-label_encoder = None
-EXPECTED_FEATURES_ORDER = []
-df_global = None
-
-
-def engineer_features(df_input: pd.DataFrame) -> pd.DataFrame:
-    df = df_input.copy()
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    df['year'] = df['datetime'].dt.year
-    df['month'] = df['datetime'].dt.month
-    df['day'] = df['datetime'].dt.day
-    df['weekday'] = df['datetime'].dt.weekday
-
-    if 'kecamatan' in df.columns:
-        df['pressure_diff'] = df.groupby('kecamatan')['pressure'].diff().fillna(method='bfill').fillna(0)
-    else:
-        df['pressure_diff'] = df['pressure'].diff().fillna(method='bfill').fillna(0)
-
-    df['dew_point_spread'] = df['temp'] - df['dew']
-
-    LAG_PERIOD = 1
-    humidity_lag_col = f'humidity_lag{LAG_PERIOD}'
-    if 'kecamatan' in df.columns:
-        df[humidity_lag_col] = df.groupby('kecamatan')['humidity'].shift(LAG_PERIOD)
-    else:
-        df[humidity_lag_col] = df['humidity'].shift(LAG_PERIOD)
-    
-    df[humidity_lag_col] = df[humidity_lag_col].fillna(method='bfill').fillna(method='ffill').fillna(df['humidity'].mean() if not df.empty else 0)
-
-    return df
-
-def load_and_preprocess_global_data():
-    global df_global, label_encoder
-
-    try:
-        raw_df = pd.read_csv(DATA_PATH)
-        print("Columns found in the DataFrame from URL:", raw_df.columns.tolist())
-    except FileNotFoundError:
-        print(f"Error: Data file {DATA_PATH} not found.")
-        return False
-    except Exception as e:
-        print(f"Error reading data from {DATA_PATH}: {e}")
-        return False
-    
-    df_eng = engineer_features(raw_df)
-    
-    df_global = df_eng
-    print("Global DataFrame loaded and preprocessed.")
-
-    
-    if EXPECTED_FEATURES_ORDER and df_global is not None:
-        cols_to_check_for_na = [col for col in EXPECTED_FEATURES_ORDER if col in df_global.columns]
-        df_global.dropna(subset=cols_to_check_for_na, inplace=True)
-        df_global.reset_index(drop=True, inplace=True)
-        print(f"Global DataFrame shape after NA drop based on expected features: {df_global.shape}")
-
-
-    return True
-
-
-# FastAPI Application Setup
 app = FastAPI(
     title="Weather Forecast API",
-    description="API to predict weather conditions ('precipprob', 'windspeed', 'temp', 'humidity').",
-    version="1.0.0"
+    description="An API to forecast weather using a trained LSTM model.",
+    version="3.0.0"
 )
 
-@app.on_event("startup")
-async def startup_event():
-    global model, feature_scaler, target_scaler, label_encoder, EXPECTED_FEATURES_ORDER
-    try:
-        model = tf.keras.models.load_model(MODEL_SAVE_PATH)
-        print("Model loaded successfully.")
-        
-        with open(PREPROCESSOR_SAVE_PATH, 'rb') as f:
-            preprocessors = pickle.load(f)
-        feature_scaler = preprocessors['feature_scaler']
-        target_scaler = preprocessors['target_scaler']
-        label_encoder = preprocessors['label_encoder']
-        print("Preprocessors loaded successfully.")
 
-        with open(FEATURES_LIST_SAVE_PATH, 'rb') as f:
-            EXPECTED_FEATURES_ORDER = pickle.load(f)
-        print(f"Expected features order loaded: {EXPECTED_FEATURES_ORDER}")
+MODEL_PATH = 'weather_prediction_lstm_model.keras'
+PREPROCESSOR_PATH = 'weather_preprocessors.pkl'
+FEATURES_PATH = 'weather_feature_list.pkl'
+DATA_PATH = 'https://drive.usercontent.google.com/uc?id=1WZrk8tYPzErxdSoLOttI0xlsteJunz5X'
+LAG_PERIOD = 1
 
-        if not load_and_preprocess_global_data():
-             raise RuntimeError("Failed to load or preprocess global data.")
-        if df_global is None or df_global.empty:
-            raise RuntimeError("Global dataframe is empty after loading and preprocessing.")
+MODEL_TIME_STEPS = 7
 
 
-    except FileNotFoundError as e:
-        print(f"Error loading model or preprocessors: {e}")
-        model = None 
-    except Exception as e:
-        print(f"An unexpected error occurred during startup: {e}")
-        model = None 
+try:
+    model = tf.keras.models.load_model(MODEL_PATH)
+    with open(PREPROCESSOR_PATH, 'rb') as f:
+        preprocessors = pickle.load(f)
+    with open(FEATURES_PATH, 'rb') as f:
+
+        features = pickle.load(f)
 
 
-class ForecastInput(BaseModel):
-    kecamatan_name: str
-    start_date: str
-    forecast_days: int = 7 # Number of days to be forecasted
+    feature_scaler = preprocessors['feature_scaler']
+    target_scaler = preprocessors['target_scaler']
+    label_encoder = preprocessors['label_encoder']
+    
 
-class ForecastOutput(BaseModel):
-    datetime: str
+    df_raw = pd.read_csv(DATA_PATH)
+    print(df_raw.head(5))
+
+except FileNotFoundError as e:
+    raise RuntimeError(f"Could not load a required file: {e}. Ensure all model artifacts are present.")
+
+
+
+def engineer_features(df):
+    """
+    Applies the same feature engineering as the training notebook.
+    """
+    df_processed = df.copy()
+    df_processed['datetime'] = pd.to_datetime(df_processed['datetime'])
+    
+
+    df_processed['year'] = df_processed['datetime'].dt.year
+    df_processed['month'] = df_processed['datetime'].dt.month
+    df_processed['day'] = df_processed['datetime'].dt.day
+    df_processed['weekday'] = df_processed['datetime'].dt.weekday
+
+
+    df_processed = df_processed.sort_values(by=['kecamatan', 'datetime'])
+    df_processed['pressure_diff'] = df_processed.groupby('kecamatan')['pressure'].diff().fillna(0)
+    df_processed['dew_point_spread'] = df_processed['temp'] - df_processed['dew']
+    
+    LAG_PERIOD = 1
+    df_processed[f'humidity_lag{LAG_PERIOD}'] = df_processed.groupby('kecamatan')['humidity'].shift(LAG_PERIOD)
+    
+
+    df_processed = df_processed.dropna().reset_index(drop=True)
+    
+    return df_processed
+
+df_featured = engineer_features(df_raw)
+
+
+
+class ForecastRequest(BaseModel):
+    kecamatan_name: str = Field(..., example="berastagi", description="The name of the sub-district (kecamatan).")
+    start_date: date = Field(..., example="2025-08-08", description="The start date for the forecast (YYYY-MM-DD).")
+    forecast_days: int = Field(7, gt=0, le=30, example=7, description="Number of days to forecast (1-30).")
+
+class ForecastResponse(BaseModel):
+    datetime: date
     kecamatan: str
     precipprob: float
     windspeed: float
     temp: float
     humidity: float
 
-# API Endpoints
+
+
+def forecast_from_date(
+    kecamatan_name: str,
+    start_date_str: str,
+    forecast_days: int
+) -> pd.DataFrame:
+    
+    targets = ['precipprob', 'windspeed', 'temp', 'humidity']
+    start_date_dt = pd.to_datetime(start_date_str)
+    
+    kecamatan_data = df_featured[df_featured['kecamatan'] == kecamatan_name].sort_values('datetime').reset_index(drop=True)
+
+    if kecamatan_data.empty:
+        raise ValueError(f"Kecamatan '{kecamatan_name}' not found in the dataset.")
+
+
+    historical_data = kecamatan_data[kecamatan_data['datetime'] < start_date_dt]
+
+    if len(historical_data) < MODEL_TIME_STEPS:
+        raise ValueError(
+            f"Not enough historical data for '{kecamatan_name}' before {start_date_dt.date()}. "
+            f"Need {MODEL_TIME_STEPS} days, but only found {len(historical_data)}."
+        )
+
+
+    current_sequence_df = historical_data.tail(MODEL_TIME_STEPS).copy()
+    
+    try:
+        kecamatan_encoded_val = label_encoder.transform([kecamatan_name])[0]
+    except ValueError:
+       raise ValueError(f"Kecamatan '{kecamatan_name}' not in the model's vocabulary.")
+
+    forecast_outputs = []
+    
+    original_cols = current_sequence_df.columns.tolist()
+
+    for i in range(forecast_days):
+        future_date = start_date_dt + timedelta(days=i)
+        
+        sequence_scaled = feature_scaler.transform(current_sequence_df[features].values)
+        X_seq_num = sequence_scaled.reshape(1, MODEL_TIME_STEPS, len(features))
+        X_seq_cat = np.array([[kecamatan_encoded_val]])
+        
+        prediction_scaled = model.predict([X_seq_num, X_seq_cat], verbose=0)
+        prediction_inversed = target_scaler.inverse_transform(prediction_scaled)
+        
+        forecast_outputs.append(prediction_inversed[0])
+
+        last_row = current_sequence_df.iloc[-1]
+        
+        new_row_data = {col: val for col, val in zip(targets, prediction_inversed[0])}
+        
+        new_row_data['datetime'] = future_date
+        new_row_data['kecamatan'] = kecamatan_name
+        new_row_data['year'] = future_date.year
+        new_row_data['month'] = future_date.month
+        new_row_data['day'] = future_date.day
+        new_row_data['weekday'] = future_date.weekday()
+
+        new_row_data['dew'] = last_row['dew']
+        
+        new_row_data['pressure_diff'] = new_row_data.get('pressure', last_row['pressure']) - last_row['pressure']
+        new_row_data['dew_point_spread'] = new_row_data['temp'] - new_row_data['dew']
+        new_row_data[f'humidity_lag{LAG_PERIOD}'] = last_row['humidity']
+        
+        for col in original_cols:
+            if col not in new_row_data and col not in features:
+                new_row_data[col] = last_row[col]
+
+        new_row_df = pd.DataFrame([new_row_data])
+
+        new_row_df = new_row_df.reindex(columns=original_cols, fill_value=0)
+
+        current_sequence_df = pd.concat([current_sequence_df.iloc[1:], new_row_df], ignore_index=True)
+
+
+    forecast_df = pd.DataFrame(np.array(forecast_outputs), columns=targets)
+    forecast_dates = pd.date_range(start=start_date_str, periods=forecast_days)
+    forecast_df['datetime'] = forecast_dates
+    forecast_df['kecamatan'] = kecamatan_name
+
+    return forecast_df[['datetime', 'kecamatan'] + targets]
+
+
+
 @app.get("/")
 def home():
-    return {"message": "Weather Forecast API. Use the /predict endpoint to get forecasts."}
+    return {"message": "Weather Forecast API. Use the /forecast endpoint."}
 
-@app.post("/predict", response_model=List[ForecastOutput])
-async def predict_weather(data: ForecastInput):
+@app.post("/forecast", response_model=list[ForecastResponse])
+async def create_forecast(request: ForecastRequest):
     try:
-        if not all([model, feature_scaler, target_scaler, label_encoder, EXPECTED_FEATURES_ORDER, df_global is not None]):
-            raise HTTPException(status_code=503, detail="Model, preprocessors, or global data not loaded. API is not ready.")
+        last_data_date = df_featured['datetime'].max().date()
+        request_start_date = request.start_date
 
-        try:
-            forecast_start_dt = pd.to_datetime(data.start_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid start_date format. Please use YYYY-MM-DD.")
+        if request_start_date > last_data_date:
 
-        kecamatan_df = df_global[df_global['kecamatan'] == data.kecamatan_name].sort_values('datetime').reset_index(drop=True)
+            model_start_date = last_data_date + timedelta(days=1)
+            
 
-        if kecamatan_df.empty:
-            raise HTTPException(status_code=404, detail=f"No historical data found for kecamatan '{data.kecamatan_name}'.")
-
-        history_end_dt = forecast_start_dt - timedelta(days=1)
-
-        historical_sequence_df = kecamatan_df[kecamatan_df['datetime'] <= history_end_dt].tail(TIME_STEPS)
-
-        if len(historical_sequence_df) < TIME_STEPS:
-            raise HTTPException(status_code=400, 
-                                detail=f"Not enough historical data for kecamatan '{data.kecamatan_name}' before {data.start_date}. "
-                                       f"Need {TIME_STEPS} days, found {len(historical_sequence_df)}.")
-
-        current_sequence_unscaled_df = historical_sequence_df.copy()
-
-        try:
-            kecamatan_encoded_val = label_encoder.transform([data.kecamatan_name])[0]
-        except ValueError:
-            raise HTTPException(status_code=400, 
-                                detail=f"Kecamatan '{data.kecamatan_name}' not seen during training. Cannot encode.")
-        X_cat_pred = np.array([[kecamatan_encoded_val]])
-
-        all_forecast_outputs = []
-
-        for day_idx in range(data.forecast_days):
-            X_num_unscaled_for_pred = current_sequence_unscaled_df[EXPECTED_FEATURES_ORDER].values
-
-            if X_num_unscaled_for_pred.shape != (TIME_STEPS, len(EXPECTED_FEATURES_ORDER)):
-                 raise ValueError(f"Numerical input shape mismatch before scaling. Expected ({TIME_STEPS}, {len(EXPECTED_FEATURES_ORDER)}), "
-                                     f"got {X_num_unscaled_for_pred.shape}. Check EXPECTED_FEATURES_ORDER and data preparation.")
-
-
-            X_num_scaled_for_pred = feature_scaler.transform(X_num_unscaled_for_pred)
-            X_seq_reshaped = X_num_scaled_for_pred.reshape((1, TIME_STEPS, len(EXPECTED_FEATURES_ORDER)))
-
-            pred_scaled = model.predict([X_seq_reshaped, X_cat_pred], verbose=0)[0]
-
-            pred_unscaled_targets_array = target_scaler.inverse_transform(pred_scaled.reshape(1, -1))[0]
-            pred_unscaled_targets_dict = dict(zip(TARGET_VARIABLES, pred_unscaled_targets_array))
-
-            actual_forecast_dt = forecast_start_dt + timedelta(days=day_idx)
-            forecast_dt_str = actual_forecast_dt.strftime('%Y-%m-%d')
-
-            all_forecast_outputs.append(
-                ForecastOutput(
-                    datetime=forecast_dt_str,
-                    kecamatan=data.kecamatan_name,
-                    precipprob=round(float(pred_unscaled_targets_dict['precipprob']), 4),
-                    windspeed=round(float(pred_unscaled_targets_dict['windspeed']), 2),
-                    temp=round(float(pred_unscaled_targets_dict['temp']), 2),
-                    humidity=round(float(pred_unscaled_targets_dict['humidity']), 2)
-                )
+            total_days_to_predict = (request_start_date - last_data_date).days + request.forecast_days
+            
+            full_forecast_df = forecast_from_date(
+                kecamatan_name=request.kecamatan_name,
+                start_date_str=model_start_date.strftime('%Y-%m-%d'),
+                forecast_days=total_days_to_predict
             )
+            
 
-            if day_idx == data.forecast_days - 1:
-                break
+            full_forecast_df['datetime'] = pd.to_datetime(full_forecast_df['datetime']).dt.date
+            final_forecast_df = full_forecast_df[
+                full_forecast_df['datetime'] >= request_start_date
+            ].head(request.forecast_days)
+            
+            return final_forecast_df.to_dict(orient="records")
+        
 
-            last_known_unscaled_row = current_sequence_unscaled_df.iloc[-1]
-            next_input_datetime = actual_forecast_dt
+        else:
+            start_date_str = request.start_date.strftime('%Y-%m-%d')
+            forecast_result_df = forecast_from_date(
+                kecamatan_name=request.kecamatan_name,
+                start_date_str=start_date_str,
+                forecast_days=request.forecast_days
+            )
+            forecast_result_df['datetime'] = pd.to_datetime(forecast_result_df['datetime']).dt.date
+            return forecast_result_df.to_dict(orient="records")
 
-            new_row_unscaled_dict = {}
-
-            new_row_unscaled_dict['year'] = next_input_datetime.year
-            new_row_unscaled_dict['month'] = next_input_datetime.month
-            new_row_unscaled_dict['day'] = next_input_datetime.day
-            new_row_unscaled_dict['weekday'] = next_input_datetime.weekday()
-
-            if 'humidity_lag1' in EXPECTED_FEATURES_ORDER:
-                new_row_unscaled_dict['humidity_lag1'] = pred_unscaled_targets_dict['humidity']
-
-
-            carried_forward_dew = last_known_unscaled_row.get('dew', 0.0)
-            if 'dew' in EXPECTED_FEATURES_ORDER:
-                new_row_unscaled_dict['dew'] = carried_forward_dew
-
-            if 'dew_point_spread' in EXPECTED_FEATURES_ORDER:
-                new_row_unscaled_dict['dew_point_spread'] = pred_unscaled_targets_dict['temp'] - carried_forward_dew
-
-            carried_forward_pressure = last_known_unscaled_row.get('pressure', 0.0)
-            if 'pressure' in EXPECTED_FEATURES_ORDER:
-                 new_row_unscaled_dict['pressure'] = carried_forward_pressure
-
-            if 'pressure_diff' in EXPECTED_FEATURES_ORDER:
-                new_row_unscaled_dict['pressure_diff'] = new_row_unscaled_dict.get('pressure', 0.0) - last_known_unscaled_row.get('pressure',0.0)
-
-            for feat_name in EXPECTED_FEATURES_ORDER:
-                if feat_name not in new_row_unscaled_dict:
-                    new_row_unscaled_dict[feat_name] = last_known_unscaled_row.get(feat_name, 0.0) 
-
-            new_row_df = pd.DataFrame([new_row_unscaled_dict])
-            new_row_df['datetime'] = next_input_datetime 
-
-            new_row_df['kecamatan'] = data.kecamatan_name 
-
-            aligned_new_row_df = new_row_df.reindex(columns=current_sequence_unscaled_df.columns)
-
-
-            current_sequence_unscaled_df = pd.concat([current_sequence_unscaled_df.iloc[1:], aligned_new_row_df], ignore_index=True)
-
-        return all_forecast_outputs
-
-    except ValueError as ve:
-        print(f"ValueError during prediction: {str(ve)}") 
-        raise HTTPException(status_code=400, detail=f"Input data processing error: {str(ve)}")
-
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"Unhandled exception during prediction: {e}") 
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        print(f"An unexpected error occurred: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected internal server error occurred.")
