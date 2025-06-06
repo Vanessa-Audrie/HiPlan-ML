@@ -11,7 +11,7 @@ from datetime import timedelta
 MODEL_SAVE_PATH = 'weather_prediction_lstm_model.keras'
 PREPROCESSOR_SAVE_PATH = 'weather_preprocessors.pkl'
 FEATURES_LIST_SAVE_PATH = 'weather_feature_list.pkl'
-DATA_PATH = 'weather.csv' # Path to your weather data
+DATA_PATH = 'https://drive.usercontent.google.com/download?id=1kzzLkqeBPVxUr-9Ec0GPsPR7UqtRdeMk&confirm=t'
 TIME_STEPS = 7
 TARGET_VARIABLES = ['precipprob', 'windspeed', 'temp', 'humidity']
 
@@ -54,10 +54,14 @@ def load_and_preprocess_global_data():
 
     try:
         raw_df = pd.read_csv(DATA_PATH)
+        print("Columns found in the DataFrame from URL:", raw_df.columns.tolist())
     except FileNotFoundError:
         print(f"Error: Data file {DATA_PATH} not found.")
         return False
-
+    except Exception as e:
+        print(f"Error reading data from {DATA_PATH}: {e}")
+        return False
+    
     df_eng = engineer_features(raw_df)
     
     df_global = df_eng
@@ -245,9 +249,9 @@ async def predict_weather(data: ForecastInput):
         return all_forecast_outputs
 
     except ValueError as ve:
-        print(f"ValueError during prediction: {str(ve)}") # Log for server
+        print(f"ValueError during prediction: {str(ve)}") 
         raise HTTPException(status_code=400, detail=f"Input data processing error: {str(ve)}")
 
     except Exception as e:
-        print(f"Unhandled exception during prediction: {e}") # Log for server
+        print(f"Unhandled exception during prediction: {e}") 
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
