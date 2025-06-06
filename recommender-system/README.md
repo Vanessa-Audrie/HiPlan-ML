@@ -1,13 +1,23 @@
-# Mountain System Recommendation
+# Mountain System Recommendation and API Documentaion
+This document outlines the Mountain Recommendation System, including the FastAPI-based API developed to serve personalized hiking suggestions, as well as detailed instructions on how to use the API. The system is designed as part of the HiPlan project to help users discover suitable hiking destinations based on their preferences.
 
 ## 📚 Table of Contents
-- [Model Explanation](#model-explanation)  
-- [Data and Features](#data-and-features)  
-- [Preprocessing & Model Preparation](#preprocessing--model-preparation)  
-- [Recommendation Pipeline](#recommendation-pipeline)   
-- [API Explanation](#api-explanation)  
-- [Startup](#startup)  
-- [How to Use the API](#how-to-use-the-api)  
+1. [Model Explanation](#model-explanation)  
+2. [Data and Features](#data-and-features)  
+   1. [Dataset Source](#dataset-source)  
+   2. [Selected Features](#selected-features)  
+3. [Preprocessing & Model Preparation](#preprocessing--model-preparation)  
+   1. [Saved Artifacts](#saved-artifacts)  
+4. [Recommendation Pipeline](#recommendation-pipeline)  
+5. [API Explanation](#api-explanation)  
+   1. [Endpoints](#endpoints)  
+   2. [Validation & Error Handling](#validation--error-handling)  
+6. [Startup](#startup)  
+   1. [Requirements](#requirements)  
+   2. [Run the API](#run-the-api)  
+7. [How to Use the API](#how-to-use-the-api)  
+   1. [Test with curl or Postman](#test-with-curl-or-postman)  
+   2. [Test Swagger UI](#test-swagger-ui)  
 
 
 ## Model Explanation
