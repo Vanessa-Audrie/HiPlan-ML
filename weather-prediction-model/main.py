@@ -1,253 +1,206 @@
-import pickle
-import uvicorn
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+import pickle
+import calendar
+from datetime import timedelta
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from datetime import date, timedelta
-import asyncio
+from fastapi.responses import RedirectResponse
 
-# -------------------------------------------------------------------
-#  1. App & Asset Paths
-# -------------------------------------------------------------------
+# load model and preprocessor
+try:
+    SEASONAL_MODEL_PATH = 'weather_seasonal_model.keras'
+    SEASONAL_PREPROCESSOR_PATH = 'weather_seasonal_preprocessor.pkl'
+    
+    MODEL = tf.keras.models.load_model(SEASONAL_MODEL_PATH)
+    with open(SEASONAL_PREPROCESSOR_PATH, 'rb') as f:
+        PREPROCESSOR = pickle.load(f)
+    print("Model and preprocessor loaded successfully.")
 
+except FileNotFoundError as e:
+    print(f" ERROR: Could not load model or preprocessor file.")
+    print(f"Make sure '{SEASONAL_MODEL_PATH}' and '{SEASONAL_PREPROCESSOR_PATH}' are in the same directory as main.py.")
+    print(f"Details: {e}")
+    exit()
+
+
+# init fastapi app
 app = FastAPI(
-    title="Weather Forecast API",
-    description="An API to forecast weather using a trained LSTM model with lazy loading.",
-    version="3.1.0"
+    title="Seasonal Weather Forecast API",
+    description="An API to predict typical seasonal weather for a given location and date range.",
+    version="1.0.0"
 )
 
-# --- Asset Paths ---
-MODEL_PATH = 'weather_prediction_lstm_model.keras'
-PREPROCESSOR_PATH = 'weather_preprocessors.pkl'
-FEATURES_PATH = 'weather_feature_list.pkl'
-DATA_PATH = 'https://drive.usercontent.google.com/uc?id=1WZrk8tYPzErxdSoLOttI0xlsteJunz5X'
-
-# --- Model Constants ---
-LAG_PERIOD = 1
-MODEL_TIME_STEPS = 7
-
-# --- Lazy Loading Cache ---
-# This dictionary will hold our model and data once they are loaded.
-_cache = {}
-# A lock to prevent race conditions during the first load in a concurrent environment
-_load_lock = asyncio.Lock()
-
-# -------------------------------------------------------------------
-#  2. Lazy Loading and Feature Engineering
-# -------------------------------------------------------------------
-
-def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+# date range prediction
+def generate_seasonal_forecast(kecamatan_name: str, start_date_str: str, days_to_predict: int):
     """
-    Applies the same feature engineering as the training notebook.
+    Internal function to generate weather forecasts. Uses the globally loaded model.
     """
-    df_processed = df.copy()
-    df_processed['datetime'] = pd.to_datetime(df_processed['datetime'])
+    try:
+        start_date = pd.to_datetime(start_date_str)
+    except ValueError:
+        return {"error": "Invalid date format. Please use 'YYYY-MM-DD'."}
+
+    features_list = []
+    date_range = [start_date + timedelta(days=i) for i in range(days_to_predict)]
+
+    for date in date_range:
+        features_list.append({
+            'year': date.year,
+            'day_sin': np.sin(2 * np.pi * date.dayofyear / 366),
+            'day_cos': np.cos(2 * np.pi * date.dayofyear / 366),
+            'month_sin': np.sin(2 * np.pi * date.month / 12),
+            'month_cos': np.cos(2 * np.pi * date.month / 12),
+            'kecamatan': kecamatan_name
+        })
     
-    df_processed['year'] = df_processed['datetime'].dt.year
-    df_processed['month'] = df_processed['datetime'].dt.month
-    df_processed['day'] = df_processed['datetime'].dt.day
-    df_processed['weekday'] = df_processed['datetime'].dt.weekday
+    input_df = pd.DataFrame(features_list)
 
-    df_processed = df_processed.sort_values(by=['kecamatan', 'datetime'])
-    df_processed['pressure_diff'] = df_processed.groupby('kecamatan')['pressure'].diff().fillna(0)
-    df_processed['dew_point_spread'] = df_processed['temp'] - df_processed['dew']
+    try:
+        input_processed = PREPROCESSOR.transform(input_df)
+    except Exception:
+        return {"error": f"Could not process input. It's possible the location '{kecamatan_name}' was not in the training data."}
+
+    all_predicted_values = MODEL.predict(input_processed)
+
+    # format output
+    final_results = []
+    targets = ['precipprob', 'windspeed', 'temp', 'humidity']
     
-    df_processed[f'humidity_lag{LAG_PERIOD}'] = df_processed.groupby('kecamatan')['humidity'].shift(LAG_PERIOD)
-    
-    df_processed = df_processed.dropna().reset_index(drop=True)
-    
-    return df_processed
+    for i, date in enumerate(date_range):
+        result = {'date': date.strftime('%Y-%m-%d'), 'kecamatan': kecamatan_name}
+        predicted_values_for_day = all_predicted_values[i]
+        for target, value in zip(targets, predicted_values_for_day):
+            result[f"predicted_{target}"] = round(float(value), 2)
+        final_results.append(result)
+        
+    return final_results
 
-async def load_assets():
-    """
-    Loads all assets lazily. If assets are already in the cache, this function returns immediately.
-    This function is now async to handle the lock properly.
-    """
-    async with _load_lock:
-        # Check if assets are already loaded to avoid redundant I/O
-        if "model" not in _cache:
-            print("Loading assets for the first time...")
-            try:
-                # Load the model
-                _cache['model'] = tf.keras.models.load_model(MODEL_PATH)
 
-                # Load preprocessors
-                with open(PREPROCESSOR_PATH, 'rb') as f:
-                    preprocessors = pickle.load(f)
-                _cache['feature_scaler'] = preprocessors['feature_scaler']
-                _cache['target_scaler'] = preprocessors['target_scaler']
-                _cache['label_encoder'] = preprocessors['label_encoder']
 
-                # Load feature list
-                with open(FEATURES_PATH, 'rb') as f:
-                    _cache['features'] = pickle.load(f)
 
-                # Load and process data
-                df_raw = pd.read_csv(DATA_PATH)
-                _cache['df_featured'] = engineer_features(df_raw)
-                
-                print("Assets loaded successfully.")
 
-            except FileNotFoundError as e:
-                # If a file is missing, we cannot proceed.
-                raise RuntimeError(f"Could not load a required file: {e}. Ensure all model artifacts are present.")
-            except Exception as e:
-                # Clear cache on any other loading error
-                _cache.clear()
-                raise RuntimeError(f"An unexpected error occurred while loading assets: {e}")
+# monthly prediction
+def generate_monthly_average(kecamatan_name: str, month: int, year: int):
+    num_days = calendar.monthrange(year, month)[1]
+    date_range = pd.to_datetime([f"{year}-{month:02d}-{day:02d}" for day in range(1, num_days + 1)])
 
-# -------------------------------------------------------------------
-#  3. Pydantic Models
-# -------------------------------------------------------------------
+    features_list = []
+    for date in date_range:
+        features_list.append({
+            'year': date.year,
+            'day_sin': np.sin(2 * np.pi * date.dayofyear / 366),
+            'day_cos': np.cos(2 * np.pi * date.dayofyear / 366),
+            'month_sin': np.sin(2 * np.pi * date.month / 12),
+            'month_cos': np.cos(2 * np.pi * date.month / 12),
+            'kecamatan': kecamatan_name
+        })
+    input_df = pd.DataFrame(features_list)
 
-class ForecastRequest(BaseModel):
-    kecamatan_name: str = Field(..., example="berastagi", description="The name of the sub-district (kecamatan).")
-    start_date: date = Field(..., example="2025-08-08", description="The start date for the forecast (YYYY-MM-DD).")
-    forecast_days: int = Field(7, gt=0, le=30, example=7, description="Number of days to forecast (1-30).")
+    try:
+        input_processed = PREPROCESSOR.transform(input_df)
+    except Exception:
+        return {"error": f"Could not process input for '{kecamatan_name}'."}
 
-class ForecastResponse(BaseModel):
-    datetime: date
-    kecamatan: str
-    precipprob: float
-    windspeed: float
-    temp: float
-    humidity: float
-
-# -------------------------------------------------------------------
-#  4. Forecasting Logic
-# -------------------------------------------------------------------
-
-def forecast_from_date(
-    kecamatan_name: str,
-    start_date_str: str,
-    forecast_days: int
-) -> pd.DataFrame:
+    all_predicted_values = MODEL.predict(input_processed)
+    average_values = np.mean(all_predicted_values, axis=0)
     
     targets = ['precipprob', 'windspeed', 'temp', 'humidity']
-    start_date_dt = pd.to_datetime(start_date_str)
-    
-    df_featured = _cache['df_featured']
-    kecamatan_data = df_featured[df_featured['kecamatan'] == kecamatan_name].sort_values('datetime').reset_index(drop=True)
 
-    if kecamatan_data.empty:
-        raise ValueError(f"Kecamatan '{kecamatan_name}' not found in the dataset.")
+    result = {}
+    for target, value in zip(targets, average_values):
+        result[f"average_{target}"] = round(float(value), 2)
 
-    historical_data = kecamatan_data[kecamatan_data['datetime'] < start_date_dt]
+    return result
 
-    if len(historical_data) < MODEL_TIME_STEPS:
-        raise ValueError(
-            f"Not enough historical data for '{kecamatan_name}' before {start_date_dt.date()}. "
-            f"Need {MODEL_TIME_STEPS} days, but only found {len(historical_data)}."
+# threshold for determining weather
+PRECIPPROB_THRESHOLD = 60.0
+HUMIDITY_THRESHOLD = 92.0
+
+
+
+
+
+
+# API ENDPOINTS
+
+@app.get("/", include_in_schema=False)
+def home():
+    return RedirectResponse(url="/docs")
+
+
+@app.get("/status")
+def get_status():
+    return {"status": "ok", "message": "API is running and model is loaded."}
+
+
+@app.get("/forecast/range")
+def get_forecast_range(kecamatan_name: str, start_date: str, days_to_predict: int):
+    if days_to_predict < 1 or days_to_predict > 90:
+        raise HTTPException(
+            status_code=400, 
+            detail="Days to predict must be between 1 and 90."
         )
 
-    current_sequence_df = historical_data.tail(MODEL_TIME_STEPS).copy()
-    
-    try:
-        kecamatan_encoded_val = _cache['label_encoder'].transform([kecamatan_name])[0]
-    except ValueError:
-       raise ValueError(f"Kecamatan '{kecamatan_name}' not in the model's vocabulary.")
+    predictions = generate_seasonal_forecast(kecamatan_name, start_date, days_to_predict)
 
-    forecast_outputs = []
-    
-    original_cols = current_sequence_df.columns.tolist()
-    features = _cache['features']
-    
-    for i in range(forecast_days):
-        future_date = start_date_dt + timedelta(days=i)
-        
-        sequence_scaled = _cache['feature_scaler'].transform(current_sequence_df[features].values)
-        X_seq_num = sequence_scaled.reshape(1, MODEL_TIME_STEPS, len(features))
-        X_seq_cat = np.array([[kecamatan_encoded_val]])
-        
-        prediction_scaled = _cache['model'].predict([X_seq_num, X_seq_cat], verbose=0)
-        prediction_inversed = _cache['target_scaler'].inverse_transform(prediction_scaled)
-        
-        forecast_outputs.append(prediction_inversed[0])
+    if isinstance(predictions, dict) and "error" in predictions:
+        raise HTTPException(status_code=400, detail=predictions["error"])
 
-        last_row = current_sequence_df.iloc[-1]
-        
-        new_row_data = {col: val for col, val in zip(targets, prediction_inversed[0])}
-        
-        new_row_data['datetime'] = future_date
-        new_row_data['kecamatan'] = kecamatan_name
-        new_row_data['year'] = future_date.year
-        new_row_data['month'] = future_date.month
-        new_row_data['day'] = future_date.day
-        new_row_data['weekday'] = future_date.weekday()
-        new_row_data['dew'] = last_row['dew']
-        new_row_data['pressure_diff'] = new_row_data.get('pressure', last_row['pressure']) - last_row['pressure']
-        new_row_data['dew_point_spread'] = new_row_data['temp'] - new_row_data['dew']
-        new_row_data[f'humidity_lag{LAG_PERIOD}'] = last_row['humidity']
-        
-        for col in original_cols:
-            if col not in new_row_data and col not in features:
-                new_row_data[col] = last_row[col]
+    return {
+        "request_info": {
+            "kecamatan_name": kecamatan_name,
+            "start_date": start_date,
+            "days_predicted": days_to_predict
+        },
+        "forecast": predictions
+    }
 
-        new_row_df = pd.DataFrame([new_row_data])
-        new_row_df = new_row_df.reindex(columns=original_cols, fill_value=0)
-        current_sequence_df = pd.concat([current_sequence_df.iloc[1:], new_row_df], ignore_index=True)
 
-    forecast_df = pd.DataFrame(np.array(forecast_outputs), columns=targets)
-    forecast_dates = pd.date_range(start=start_date_str, periods=forecast_days)
-    forecast_df['datetime'] = forecast_dates
-    forecast_df['kecamatan'] = kecamatan_name
-
-    return forecast_df[['datetime', 'kecamatan'] + targets]
-
-# -------------------------------------------------------------------
-#  5. API Endpoints
-# -------------------------------------------------------------------
-
-@app.get("/")
-def home():
-    return {"message": "Weather Forecast API is running. Use the /forecast endpoint to get predictions."}
-
-@app.post("/forecast", response_model=list[ForecastResponse])
-async def create_forecast(request: ForecastRequest):
+@app.get("/forecast/monthly")
+def get_monthly_forecast(kecamatan_name: str, month: int, year: int):
     """
-    Creates a weather forecast. Assets will be loaded on the first request.
+    Provides the average seasonal weather forecast for a given month and year.
     """
-    # This will ensure all assets are loaded before proceeding.
-    # It will only perform the load operation on the very first API call.
-    await load_assets()
-    
-    try:
-        df_featured = _cache['df_featured']
-        last_data_date = df_featured['datetime'].max().date()
-        request_start_date = request.start_date
-
-        if request_start_date > last_data_date:
-            model_start_date = last_data_date + timedelta(days=1)
-            total_days_to_predict = (request_start_date - last_data_date).days + request.forecast_days
-            
-            full_forecast_df = forecast_from_date(
-                kecamatan_name=request.kecamatan_name,
-                start_date_str=model_start_date.strftime('%Y-%m-%d'),
-                forecast_days=total_days_to_predict
-            )
-            
-            full_forecast_df['datetime'] = pd.to_datetime(full_forecast_df['datetime']).dt.date
-            final_forecast_df = full_forecast_df[
-                full_forecast_df['datetime'] >= request_start_date
-            ].head(request.forecast_days)
-            
-            return final_forecast_df.to_dict(orient="records")
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=400, detail="Month must be between 1 and 12.")
+    if not 1970 <= year <= 2070:
+        raise HTTPException(status_code=400, detail="Year must be between 1970 and 2070.")
         
-        else:
-            start_date_str = request.start_date.strftime('%Y-%m-%d')
-            forecast_result_df = forecast_from_date(
-                kecamatan_name=request.kecamatan_name,
-                start_date_str=start_date_str,
-                forecast_days=request.forecast_days
-            )
-            forecast_result_df['datetime'] = pd.to_datetime(forecast_result_df['datetime']).dt.date
-            return forecast_result_df.to_dict(orient="records")
+    predictions = generate_monthly_average(kecamatan_name, month, year)
+    if isinstance(predictions, dict) and "error" in predictions:
+        raise HTTPException(status_code=400, detail=predictions["error"])
+        
+    return {
+        "request_info": {"kecamatan_name": kecamatan_name, "month": calendar.month_name[month], "year": year},
+        "forecast": predictions
+    }
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        # It's good practice to log the actual error for debugging
-        print(f"An unexpected error occurred: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected internal server error occurred.")
+
+
+@app.get("/forecast/seasonality")
+def get_seasonality_forecast(kecamatan_name: str, month: int, year: int):
+
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=400, detail="Month must be between 1 and 12.")
+    if not 1970 <= year <= 2070:
+        raise HTTPException(status_code=400, detail="Year must be between 1970 and 2070.")
+        
+    # call the monthly function
+    monthly_avg = generate_monthly_average(kecamatan_name, month, year)
+    if isinstance(monthly_avg, dict) and "error" in monthly_avg:
+        raise HTTPException(status_code=400, detail=monthly_avg["error"])
+        
+
+    if (monthly_avg['average_precipprob'] > PRECIPPROB_THRESHOLD and monthly_avg['average_humidity'] > HUMIDITY_THRESHOLD):
+        seasonality = "Rainy"
+    else:
+        seasonality = "Sunny"
+        
+    return {
+        "request_info": {"kecamatan_name": kecamatan_name, "month": calendar.month_name[month], "year": year},
+        "analysis": {
+            "determined_seasonality": seasonality,
+            "reasoning_metrics": monthly_avg
+        }
+    }
