@@ -121,7 +121,7 @@ def translate_condition(condition_str):
 
 # Ambil Cuaca dari API Visual Crossing
 st.markdown("<br><hr><br>", unsafe_allow_html=True)
-st.header("Prediksi Cuaca 🌤")
+st.header("Prediksi Cuaca 🌥️")
 st.subheader("Cuaca Harian (Visual Crossing)")
 
 if selected_gunung != "Pilih Gunung":
@@ -142,25 +142,37 @@ if selected_gunung != "Pilih Gunung":
             kondisi = translate_condition(day.get("conditions", ""))
 
             konten = f"""
-                <div style="
-                    text-align:center; 
-                    padding:10px; 
-                    border-radius:10px; 
-                    background-color:#262730; 
-                    cursor:pointer;
-                    height: 300px;   
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                ">
-                    <h5 style="margin-bottom:0; margin-left:30px;">{hari}</h5>
-                    <p style="margin:0;">{tanggal_str}</p>
-                    <h3 style="margin-top:10px; margin-left:30px;">{day['temp']}°C</h3>
-                    <p style="margin:0;">{kondisi}</p>
-                    <p style="margin:0;">🌬 {day['windspeed']} km/h</p>
-                    <p style="margin:0;">💧 {day['humidity']}%</p>
-                    <p style="margin:0;">☔ {day['precipprob']}%</p>
-                </div>
+            <style>
+            .card {{
+                text-align:center; 
+                padding:10px; 
+                border-radius:10px; 
+                cursor:pointer;
+                height: 300px;   
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                background-color: #f1f2f6;
+                color: #000000;
+            }}
+
+            @media (prefers-color-scheme: dark) {{
+                .card {{
+                background-color: #262730;
+                color: #FFFFFF;
+                }}
+            }}
+            </style>
+
+            <div class="card">
+            <h5 style="margin-bottom:0; margin-left:30px;">{hari}</h5>
+            <p style="margin:0;">{tanggal_str}</p>
+            <h3 style="margin-top:10px; margin-left:30px;">{day['temp']}°C</h3>
+            <p style="margin:0;">{kondisi}</p>
+            <p style="margin:0;">🌬 {day['windspeed']} km/h</p>
+            <p style="margin:0;">💧 {day['humidity']}%</p>
+            <p style="margin:0;">☔ {day['precipprob']}%</p>
+            </div>
             """
 
             with cols[i]:
@@ -275,7 +287,7 @@ else:
                     unsafe_allow_html=True
                 )
                 st.markdown(
-                    f'<div style="{style}">⏱ Estimasi Waktu: {result.get("estimated_time", "-")}</div>',
+                    f'<div style="{style}">🧭 Estimasi Waktu: {result.get("estimated_time", "-")}</div>',
                     unsafe_allow_html=True
                 )
             
