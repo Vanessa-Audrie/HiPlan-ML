@@ -114,7 +114,7 @@ def generate_monthly_average(kecamatan_name: str, month: int, year: int):
     return result
 
 # threshold for determining weather
-PRECIPPROB_THRESHOLD = 60.0
+PRECIPPROB_THRESHOLD = 70.0
 HUMIDITY_THRESHOLD = 92.0
 
 
@@ -189,7 +189,7 @@ def get_seasonality_forecast(kecamatan_name: str, month: int, year: int):
         raise HTTPException(status_code=400, detail=monthly_avg["error"])
         
 
-    if (monthly_avg['average_precipprob'] > PRECIPPROB_THRESHOLD and monthly_avg['average_humidity'] > HUMIDITY_THRESHOLD):
+    if (monthly_avg['average_precipprob'] > PRECIPPROB_THRESHOLD or monthly_avg['average_humidity'] > HUMIDITY_THRESHOLD):
         seasonality = "Hujan"
     else:
         seasonality = "Cerah"
