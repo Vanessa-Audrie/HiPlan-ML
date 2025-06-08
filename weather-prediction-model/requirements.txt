@@ -2,8 +2,10 @@ fastapi==0.115.12
 gdown==5.2.0
 keras==3.9.2
 matplotlib==3.10.3
-numpy==2.3.0
-pandas==2.3.0
-scikit_learn==1.7.0
+numpy==1.26.4
+scikit_learn==1.6.1
 seaborn==0.13.2
 tensorflow==2.18.0
+pandas==2.2.2
+pydantic==2.6.4
+uvicorn==0.29.0
