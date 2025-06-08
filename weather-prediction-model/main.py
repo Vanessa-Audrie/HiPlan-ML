@@ -133,7 +133,7 @@ def home():
 def get_status():
     return {"status": "ok", "message": "API is running and model is loaded."}
 
-@app.post("/forecast/range")
+@app.get("/forecast/range")
 def get_forecast_range(kecamatan_name: str, start_date: str, days_to_predict: int):
     if days_to_predict < 1 or days_to_predict > 90:
         raise HTTPException(
@@ -155,7 +155,7 @@ def get_forecast_range(kecamatan_name: str, start_date: str, days_to_predict: in
         "forecast": predictions
     }
 
-@app.post("/forecast/monthly")
+@app.get("/forecast/monthly")
 def get_monthly_forecast(kecamatan_name: str, month: int, year: int):
     """
     Provides the average seasonal weather forecast for a given month and year.
@@ -175,7 +175,7 @@ def get_monthly_forecast(kecamatan_name: str, month: int, year: int):
     }
 
 
-@app.post("/forecast/seasonality")
+@app.get("/forecast/seasonality")
 def get_seasonality_forecast(kecamatan_name: str, month: int, year: int):
 
     if not 1 <= month <= 12:
