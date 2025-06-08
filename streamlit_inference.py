@@ -51,7 +51,7 @@ def get_weather_data(kecamatan):
     try:
         location_query = kecamatan.replace(" ", "%20")
         today = datetime.date.today().isoformat()
-        api_key = "4P4BD2FHQ352756S97MUS5TP4"
+        api_key = "WCQPBLZHREA7LZ5RAX8MREF9N"
         url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location_query}?unitGroup=metric&key={api_key}&contentType=json&elements=datetime,temp,humidity,precipprob,windspeed,conditions&lang=id"
 
         res = requests.get(url)
@@ -176,7 +176,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.header("Kecenderungan Cuaca Bulanan")
 
 if selected_gunung == "Pilih Gunung":
-    st.warning("📌 Silakan pilih gunung terlebih dahulu sebelum melihat prediksi kecenderungan cuaca.")
+    st.info("📌 Silakan pilih gunung terlebih dahulu sebelum melihat prediksi kecenderungan cuaca.")
 else:
     # Hanya muncul jika gunung sudah dipilih
     current_year = datetime.datetime.now().year

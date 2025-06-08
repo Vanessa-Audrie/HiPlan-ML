@@ -74,8 +74,8 @@ Once running, the interactive API documentation can be accessed by navigating to
 ### Seasonality Analysis
 - Endpoint: `/forecast/seasonality`
 - Description: Determines if a given month is seasonally "Rainy" or "Sunny" based on the average monthly forecast.
-- Logic: A month is classified as "Rainy" if both of the following conditions are met:
-    - The average precipitation probability is > `60.0%`.
+- Logic: A month is classified as "Rainy" if one of the following conditions are met:
+    - The average precipitation probability is > `70.0%`.
     - The average humidity is > `92.0%`.
     - Otherwise, it is classified as "Sunny".
 - Parameters:
