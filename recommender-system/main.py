@@ -4,7 +4,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import joblib
 import scipy
 import os
-import logging
+import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, 'model')
@@ -44,7 +44,8 @@ def rekomendasikan_gunung(input_lokasi, input_ketinggian, top_n=5, similarity_th
     try:
         # Proses rekomendasi
         input_lokasi_vec = vectorizer.transform([input_lokasi])
-        input_numerik = scaler.transform([[input_ketinggian]])
+        input_numerik_df = pd.DataFrame([[input_ketinggian]], columns=['Ketinggian (dpl)'])
+        input_numerik = scaler.transform(input_numerik_df)
         input_combined = scipy.sparse.hstack([input_lokasi_vec, input_numerik])
 
         similarity_scores = cosine_similarity(input_combined, combined_recom_features).flatten()
