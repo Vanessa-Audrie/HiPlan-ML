@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 from sklearn.metrics.pairwise import cosine_similarity
 import joblib
 import scipy
@@ -18,6 +19,15 @@ except Exception as e:
     raise RuntimeError(f"Gagal load model/data: {e}")
 
 app = FastAPI(title="API Rekomendasi Gunung")
+
+# Enable CORS for frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[""],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[""],
+)
 
 @app.get("/")
 def read_root():
