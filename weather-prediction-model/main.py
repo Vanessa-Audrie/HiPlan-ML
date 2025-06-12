@@ -6,6 +6,7 @@ import calendar
 from datetime import timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # load model and preprocessor
 try:
@@ -29,6 +30,15 @@ app = FastAPI(
     title="Seasonal Weather Forecast API",
     description="An API to predict typical seasonal weather for a given location and date range.",
     version="1.0.0"
+)
+
+# Enable CORS for frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # date range prediction
