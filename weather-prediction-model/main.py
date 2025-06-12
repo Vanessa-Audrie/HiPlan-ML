@@ -143,48 +143,6 @@ def home():
 def get_status():
     return {"status": "ok", "message": "API is running and model is loaded."}
 
-@app.get("/forecast/range")
-def get_forecast_range(kecamatan_name: str, start_date: str, days_to_predict: int):
-    if days_to_predict < 1 or days_to_predict > 90:
-        raise HTTPException(
-            status_code=400, 
-            detail="Days to predict must be between 1 and 90."
-        )
-
-    predictions = generate_seasonal_forecast(kecamatan_name, start_date, days_to_predict)
-
-    if isinstance(predictions, dict) and "error" in predictions:
-        raise HTTPException(status_code=400, detail=predictions["error"])
-
-    return {
-        "request_info": {
-            "kecamatan_name": kecamatan_name,
-            "start_date": start_date,
-            "days_predicted": days_to_predict
-        },
-        "forecast": predictions
-    }
-
-@app.get("/forecast/monthly")
-def get_monthly_forecast(kecamatan_name: str, month: int, year: int):
-    """
-    Provides the average seasonal weather forecast for a given month and year.
-    """
-    if not 1 <= month <= 12:
-        raise HTTPException(status_code=400, detail="Month must be between 1 and 12.")
-    if not 1970 <= year <= 2070:
-        raise HTTPException(status_code=400, detail="Year must be between 1970 and 2070.")
-        
-    predictions = generate_monthly_average(kecamatan_name, month, year)
-    if isinstance(predictions, dict) and "error" in predictions:
-        raise HTTPException(status_code=400, detail=predictions["error"])
-        
-    return {
-        "request_info": {"kecamatan_name": kecamatan_name, "month": calendar.month_name[month], "year": year},
-        "forecast": predictions
-    }
-
-
 @app.get("/forecast/seasonality")
 def get_seasonality_forecast(kecamatan_name: str, month: int, year: int):
 
